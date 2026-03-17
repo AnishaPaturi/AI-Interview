@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 
 export interface Interview {
   id: string;
@@ -83,69 +83,60 @@ const sampleInterviews: Interview[] = [
     communication: 85,
     badge: 'deer',
     pointsEarned: 150,
-    transcript: [
-      { speaker: 'AI', text: 'Tell me about how you would design a URL shortener service.' },
-      { speaker: 'User', text: 'I would start by understanding the requirements...' },
-    ],
+    transcript: [],
     feedback: {
-      strengths: ['Clear communication', 'Good system thinking'],
-      weaknesses: ['Need more detail on database schema'],
-      improvements: ['Practice scaling considerations', 'Learn more about caching strategies'],
+      strengths: ['Clear communication'],
+      weaknesses: ['Need more system depth'],
+      improvements: ['Practice scaling concepts'],
     },
-  },
-  {
-    id: '2',
-    date: '2026-03-10',
-    topic: 'Machine Learning',
-    role: 'Data Scientist',
-    score: 78,
-    accuracy: 75,
-    confidence: 80,
-    communication: 79,
-    badge: 'fish',
-    pointsEarned: 130,
-    transcript: [
-      { speaker: 'AI', text: 'Explain the difference between supervised and unsupervised learning.' },
-      { speaker: 'User', text: 'Supervised learning uses labeled data...' },
-    ],
-    feedback: {
-      strengths: ['Good understanding of concepts'],
-      weaknesses: ['Could improve on practical examples'],
-      improvements: ['Study more real-world ML applications'],
-    },
-  },
+  }
 ];
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [user, setUser] = useState<User>({
-    name: 'Alex Morgan',
-    email: 'alex@example.com',
-    points: 450,
-    currentBadge: 'deer',
-    totalInterviews: 12,
-    avatarUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex',
+
+  const [user, setUser] = useState<User>(() => {
+    const savedUser = localStorage.getItem("user");
+    if (savedUser) return JSON.parse(savedUser);
+
+    return {
+      name: "Guest",
+      email: "",
+      points: 0,
+      currentBadge: "seed",
+      totalInterviews: 0,
+      avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Guest",
+    };
   });
-  const [interviews, setInterviews] = useState<Interview[]>(sampleInterviews);
+
+  const [interviews, setInterviews] = useState<Interview[]>([]);
   const [badges, setBadges] = useState<Badge[]>(initialBadges);
   const [currentInterview, setCurrentInterview] = useState<Interview | null>(null);
 
+  useEffect(() => {
+    localStorage.setItem("user", JSON.stringify(user));
+  }, [user]);
+
   const addInterview = (interview: Interview) => {
+
     setInterviews(prev => [interview, ...prev]);
+
+    const newPoints = user.points + interview.pointsEarned;
+
     setUser(prev => ({
       ...prev,
-      points: prev.points + interview.pointsEarned,
-      totalInterviews: prev.totalInterviews + 1,
+      points: newPoints,
+      totalInterviews: prev.totalInterviews + 1
     }));
-    
-    // Check for badge unlocks
-    const newPoints = user.points + interview.pointsEarned;
+
     badges.forEach(badge => {
       if (!badge.unlocked && newPoints >= badge.pointsRequired) {
         unlockBadge(badge.id);
         setUser(prev => ({ ...prev, currentBadge: badge.id }));
       }
     });
+
   };
 
   const unlockBadge = (badgeId: string) => {
@@ -157,15 +148,40 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const login = (email: string, password: string) => {
+
+    const newUser: User = {
+      name: email.split("@")[0],
+      email,
+      points: 0,
+      currentBadge: "seed",
+      totalInterviews: 0,
+      avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`
+    };
+
+    setUser(newUser);
+    localStorage.setItem("user", JSON.stringify(newUser));
     setIsAuthenticated(true);
   };
 
   const signup = (name: string, email: string, password: string) => {
-    setUser(prev => ({ ...prev, name, email }));
+
+    const newUser: User = {
+      name,
+      email,
+      points: 0,
+      currentBadge: "seed",
+      totalInterviews: 0,
+      avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`
+    };
+
+    setUser(newUser);
+    localStorage.setItem("user", JSON.stringify(newUser));
     setIsAuthenticated(true);
+
   };
 
   const logout = () => {
+    localStorage.removeItem("user");
     setIsAuthenticated(false);
   };
 

@@ -87,5 +87,18 @@
     "overrides": {
       "vite": "6.3.5"
     }
-  }
+  },
+  "description": "This is a code bundle for AI Mock Interview Platform UI. The original project is available at https://www.figma.com/design/nOLRUztbsW8djbEZceXCtk/AI-Mock-Interview-Platform-UI.",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AnishaPaturi/AI-Interview.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/AnishaPaturi/AI-Interview/issues"
+  },
+  "homepage": "https://github.com/AnishaPaturi/AI-Interview#readme"
 }
