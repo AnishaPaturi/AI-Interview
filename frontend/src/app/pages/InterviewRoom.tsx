@@ -6,64 +6,141 @@ import { motion, AnimatePresence } from 'motion/react';
 export const InterviewRoom = () => {
   const navigate = useNavigate();
   const location = useLocation();
-
   const { role, topics } = location.state || {};
 
-  // STATES
-  const [questions, setQuestions] = useState<string[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState('');
   const [isMicOn, setIsMicOn] = useState(true);
   const [isCameraOn, setIsCameraOn] = useState(true);
-  const [isRecording, setIsRecording] = useState(true);
   const [timer, setTimer] = useState(0);
   const [isListening, setIsListening] = useState(false);
   const [isAiThinking, setIsAiThinking] = useState(false);
-  const [showTabWarning, setShowTabWarning] = useState(false);
+  const [transcript, setTranscript] = useState<any[]>([]);
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
-  const [confidenceLevel, setConfidenceLevel] = useState(0);
+  const [showTabWarning, setShowTabWarning] = useState(false);
 
-  const [transcript, setTranscript] = useState<Array<{ speaker: string; text: string }>>([]);
+  // 🎤 Speech Recognition
+  const SpeechRecognition =
+    (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
-  // AVATAR COMPONENT
-  const Avatar = ({ name, type = 'ai' }: { name: string; type?: 'ai' | 'user' }) => {
-    const initials = name
-      .split(' ')
-      .map(w => w[0])
-      .join('')
-      .toUpperCase();
+  const recognition = SpeechRecognition ? new SpeechRecognition() : null;
 
-    return (
-      <div className="flex flex-col items-center justify-center h-full">
-        <div
-          className={`w-24 h-24 rounded-full flex items-center justify-center text-xl font-bold ${
-            type === 'ai'
-              ? 'bg-gradient-to-r from-purple-500 to-cyan-500 text-white'
-              : 'bg-white/10 text-white border border-purple-400'
-          }`}
-        >
-          {initials}
-        </div>
-        <p className="mt-3 text-sm text-gray-300">{name}</p>
-      </div>
-    );
+  if (recognition) {
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+  }
+
+  // 🔊 AI Voice
+  const speak = (text: string, callback?: () => void) => {
+    const utterance = new SpeechSynthesisUtterance(text);
+
+    utterance.rate = 1;
+    utterance.pitch = 1;
+
+    utterance.onend = () => {
+      callback && callback();
+    };
+
+    speechSynthesis.speak(utterance);
   };
 
-  // ⏱ TIMER
+  // 🎤 Start Listening
+  const startListening = () => {
+    if (!recognition || !isMicOn) return;
+
+    setIsListening(true);
+
+    recognition.start();
+
+    recognition.onresult = (event: any) => {
+      const speechText = event.results[0][0].transcript;
+
+      setTranscript(prev => [...prev, { speaker: 'User', text: speechText }]);
+
+      setIsListening(false);
+      setIsAiThinking(true);
+
+      generateFollowUp(speechText);
+    };
+
+    recognition.onerror = () => {
+      setIsListening(false);
+    };
+  };
+
+  // 🤖 Generate Follow-Up
+  const generateFollowUp = async (answer: string) => {
+    try {
+      const res = await fetch('http://localhost:5000/api/practice/followup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: currentQuestion, answer })
+      });
+
+      const data = await res.json();
+      const nextQ = data.followUp;
+
+      setCurrentQuestion(nextQ);
+      setTranscript(prev => [...prev, { speaker: 'AI', text: nextQ }]);
+      setIsAiThinking(false);
+
+      // 🔥 Speak + loop
+      speak(nextQ, () => {
+        startListening();
+      });
+
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // 🔥 Fetch First Question
+  useEffect(() => {
+    const fetchQ = async () => {
+      try {
+        const res = await fetch('http://localhost:5000/api/practice/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            role: role || 'Software Engineer',
+            topics: topics || ['DSA']
+          })
+        });
+
+        const data = await res.json();
+        const firstQ = data.questions?.[0];
+
+        if (firstQ) {
+          setCurrentQuestion(firstQ);
+          setTranscript([{ speaker: 'AI', text: firstQ }]);
+
+          speak(firstQ, () => {
+            startListening();
+          });
+        }
+
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
+    fetchQ();
+  }, []);
+
+  // ⏱ Timer
   useEffect(() => {
     const interval = setInterval(() => setTimer(t => t + 1), 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // ⚠️ TAB SWITCH DETECTION
+  // ⚠️ Tab detection
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
         setTabSwitchCount(prev => prev + 1);
         setShowTabWarning(true);
 
-        if (tabSwitchCount >= 2) {
-          endInterview();
-        }
+        if (tabSwitchCount >= 2) navigate('/interview-results');
       }
     };
 
@@ -71,107 +148,38 @@ export const InterviewRoom = () => {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [tabSwitchCount]);
 
-  // 🔥 FETCH QUESTIONS (DYNAMIC)
-  useEffect(() => {
-    const fetchQuestions = async () => {
-      try {
-        const res = await fetch('http://localhost:5000/api/practice/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            role: role || 'Software Engineer',
-            topics: topics || ['DSA', 'System Design']
-          })
-        });
+  // 👤 Avatar
+  const Avatar = ({ name }: { name: string }) => {
+    const initials = name.split(' ').map(w => w[0]).join('').toUpperCase();
 
-        const data = await res.json();
-
-        if (data.questions?.length > 0) {
-          setQuestions(data.questions);
-          setCurrentQuestion(data.questions[0]);
-
-          setTranscript([{ speaker: 'AI', text: data.questions[0] }]);
-        }
-      } catch (err) {
-        console.error('Error fetching questions:', err);
-      }
-    };
-
-    fetchQuestions();
-  }, []);
-
-  // 🤖 AI RESPONSE FLOW
-  useEffect(() => {
-    if (isListening) {
-      const timeout = setTimeout(() => {
-        setIsListening(false);
-        setIsAiThinking(true);
-        setConfidenceLevel(Math.floor(Math.random() * 30) + 70);
-
-        setTimeout(() => {
-          setIsAiThinking(false);
-          askFollowUp();
-        }, 2000);
-      }, 3000);
-
-      return () => clearTimeout(timeout);
-    }
-  }, [isListening]);
-
-  // 🔁 FOLLOW-UP QUESTIONS
-  const askFollowUp = async () => {
-    try {
-      const lastAnswer = transcript[transcript.length - 1]?.text;
-
-      const res = await fetch('http://localhost:5000/api/practice/followup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question: currentQuestion,
-          answer: lastAnswer
-        })
-      });
-
-      const data = await res.json();
-
-      if (data.followUp) {
-        setCurrentQuestion(data.followUp);
-        setTranscript(prev => [...prev, { speaker: 'AI', text: data.followUp }]);
-      }
-
-    } catch (err) {
-      console.error('Follow-up error:', err);
-    }
-  };
-
-  // 🧪 SIMULATE ANSWER
-  const simulateAnswer = () => {
-    const answer = "This is a simulated user answer...";
-    setTranscript(prev => [...prev, { speaker: 'User', text: answer }]);
-    setIsListening(true);
+    return (
+      <div className="flex flex-col items-center">
+        <div className="w-24 h-24 rounded-full bg-purple-500 flex items-center justify-center text-white text-xl">
+          {initials}
+        </div>
+        <p className="text-gray-300 mt-2">{name}</p>
+      </div>
+    );
   };
 
   const endInterview = () => navigate('/interview-results');
 
   const formatTime = (s: number) => {
-    const mins = Math.floor(s / 60);
-    const secs = s % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, '0')}`;
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0f0c29] via-[#1a1535] to-[#0f0c29]">
+    <div className="min-h-screen bg-[#0f0c29] text-white">
 
-      {/* ⚠️ TAB WARNING */}
+      {/* ⚠️ Warning */}
       <AnimatePresence>
         {showTabWarning && (
-          <motion.div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-            <div className="bg-red-500/20 border-2 border-red-500 rounded-xl p-8">
-              <h3 className="text-white font-bold text-xl mb-2">Focus Lost!</h3>
-              <p className="text-gray-300">Warning {tabSwitchCount}/3</p>
-              <button onClick={() => setShowTabWarning(false)} className="mt-4 bg-red-500 px-4 py-2 rounded text-white">
-                Continue
-              </button>
+          <motion.div className="fixed inset-0 bg-black/80 flex justify-center items-center">
+            <div className="bg-red-500 p-6 rounded">
+              Tab switch detected ({tabSwitchCount}/3)
+              <button onClick={() => setShowTabWarning(false)}>OK</button>
             </div>
           </motion.div>
         )}
@@ -182,34 +190,38 @@ export const InterviewRoom = () => {
         {/* LEFT */}
         <div className="flex-1 flex flex-col">
 
-          {/* QUESTION */}
-          <div className="p-6 border-b border-purple-500/20">
-            <p className="text-gray-400 text-sm">Current Question</p>
-            <p className="text-white text-lg">{currentQuestion}</p>
+          {/* Question */}
+          <div className="p-6 border-b">
+            <p className="text-gray-400">Question</p>
+            <p>{currentQuestion}</p>
           </div>
 
-          {/* VIDEO GRID */}
+          {/* Video */}
           <div className="flex-1 grid grid-cols-2 gap-4 p-4">
 
-            {/* USER */}
-            <div className="relative bg-white/5 rounded-xl flex items-center justify-center">
-              {isCameraOn ? <Avatar name="You" type="user" /> : <VideoOff />}
+            <div className="bg-white/5 flex items-center justify-center rounded">
+              {isCameraOn ? <Avatar name="You" /> : <VideoOff />}
             </div>
 
-            {/* AI */}
-            <div className="relative bg-white/5 rounded-xl flex items-center justify-center">
-              <Avatar name="AI Interviewer" type="ai" />
+            <div className="bg-white/5 flex items-center justify-center rounded">
+              <Avatar name="AI Interviewer" />
+
+              {isListening && (
+                <div className="absolute top-4 right-4 text-green-400">
+                  🎤 Listening...
+                </div>
+              )}
 
               {isAiThinking && (
-                <div className="absolute top-4 right-4 text-purple-400 text-sm">
-                  Thinking...
+                <div className="absolute top-4 right-4 text-purple-400">
+                  🤖 Thinking...
                 </div>
               )}
             </div>
           </div>
 
-          {/* CONTROLS */}
-          <div className="p-4 flex justify-between items-center">
+          {/* Controls */}
+          <div className="p-4 flex justify-between">
 
             <div>{formatTime(timer)}</div>
 
@@ -222,29 +234,20 @@ export const InterviewRoom = () => {
                 {isCameraOn ? <Video /> : <VideoOff />}
               </button>
 
-              <button onClick={simulateAnswer} className="bg-green-500 px-4 py-2 rounded text-white">
-                Answer
-              </button>
-
-              <button onClick={endInterview} className="bg-red-500 px-4 py-2 rounded text-white">
-                End
+              <button onClick={endInterview}>
+                <X />
               </button>
             </div>
-
-            {confidenceLevel > 0 && (
-              <div className="text-white">{confidenceLevel}%</div>
-            )}
           </div>
         </div>
 
-        {/* RIGHT PANEL */}
-        <div className="w-96 border-l border-purple-500/20 p-4 overflow-y-auto">
-          <h3 className="text-white mb-4">Transcript</h3>
+        {/* RIGHT */}
+        <div className="w-80 border-l p-4 overflow-y-auto">
+          <h3>Transcript</h3>
 
           {transcript.map((t, i) => (
-            <div key={i} className="mb-3">
-              <div className="text-xs text-gray-400">{t.speaker}</div>
-              <div className="text-white text-sm">{t.text}</div>
+            <div key={i}>
+              <b>{t.speaker}:</b> {t.text}
             </div>
           ))}
         </div>
