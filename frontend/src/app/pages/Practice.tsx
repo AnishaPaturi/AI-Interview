@@ -39,7 +39,7 @@ export const Practice = () => {
     try {
       setLoading(true);
 
-      const res = await fetch("/api/practice-questions", {
+      const res = await fetch("http://localhost:5000/api/practice/generate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -47,9 +47,16 @@ export const Practice = () => {
         body: JSON.stringify({ topic }),
       });
 
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("API ERROR:", text);
+        throw new Error("API failed");
+      }
+
       const data = await res.json();
 
       setQuestions(data.questions);
+
     } catch (err) {
       console.error(err);
       alert("Failed to generate questions");
